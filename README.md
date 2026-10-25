@@ -40,11 +40,6 @@ stellar contract build
 
 Outputs to `target/wasm32v1-none/release/`.
 
-## Test
-
-```
-cargo test
-```
 
 `sparekey` ships with a full test suite covering every failure path (bad proof,
 unknown DKIM key, wrong commitment, wrong salt, reused nullifier, malformed
