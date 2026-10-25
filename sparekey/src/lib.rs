@@ -33,7 +33,7 @@ use soroban_sdk::{
 
 const DAY_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = 30 * DAY_LEDGERS;
-const TTL_EXTEND: u32 = 170 * DAY_LEDGERS;
+const TTL_EXTEND: u32 = 120 * DAY_LEDGERS;
 
 /// Upper bound on the admin-set delay. The admin can tune the wait, but cannot
 /// set it so long that funds are effectively frozen.
@@ -380,7 +380,6 @@ fn put_reg(env: &Env, owner: &Address, reg: &Registration) {
         TTL_THRESHOLD,
         TTL_EXTEND,
     );
-    touch(env);
 }
 
 fn get_reg(env: &Env, owner: &Address) -> Registration {
