@@ -1,0 +1,18 @@
+{
+  "circuit_sha256": null,
+  "curve": "bn254",
+  "dependencies": {
+    "arkworks": "0.6",
+    "soroban-sdk": "27.0.1"
+  },
+  "generator": {
+    "name": "soroban-verifier-gen-core",
+    "version": "0.4.3"
+  },
+  "protocol": "groth16",
+  "public_inputs": 7,
+  "schema": "groth16-verifier-manifest-v1",
+  "serialization": "soroban-bn254-ethereum-uncompressed-big-endian-v1",
+  "source_format": "snarkjs-json",
+  "vk_sha256": "33af9d5c372acbd68f3a6899d6bc5e29036c1faf4d2ce3ace92c54b2ae014f11"
+}
