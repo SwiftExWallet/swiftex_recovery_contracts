@@ -1,23 +1,15 @@
 #![no_std]
-//! SpareKey — email recovery for ordinary Stellar accounts.
+//! email recovery for a normal stellar account.
 //!
-//! Phase 1, registration: while the owner still holds their key, they record a
-//! commitment to their email address and grant this contract a standing
-//! allowance. Nothing moves and nothing is locked.
+//! register while you still have your key: store a commitment to your email + an
+//! allowance. nothing locked.
+//! recover after you lose the device: email the relayer with your new address in
+//! the subject. a zk proof shows a mail provider signed it and the sender matches
+//! the commitment. destination comes from the signed subject so the relayer can't
+//! redirect it. short cancel window.
 //!
-//! Phase 2, recovery: the owner emails the relayer with their NEW address as
-//! the subject. A zero-knowledge proof shows that a real mail provider signed
-//! that email, that the sender matches the stored commitment, and what the
-//! subject said. The destination comes out of the signed subject, never from
-//! the caller, so whoever submits the proof cannot redirect the funds. A delay
-//! then runs, during which the owner can cancel.
-//!
-//! Three properties this contract must not lose:
-//!
-//! 1. Funds can only ever reach the address named in a signed email, or stay
-//!    where they are. The admin cannot move them, and neither can we.
-//! 2. One email authorises one recovery, forever (the nullifier is global).
-//! 3. Every admin power is a parameter, never authority over funds.
+//! funds only ever go to the signed address or stay put. one email = one recovery
+//! (nullifier is global). admin tweaks params, never touches funds.
 
 mod events;
 mod types;
@@ -35,14 +27,13 @@ const DAY_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = 30 * DAY_LEDGERS;
 const TTL_EXTEND: u32 = 120 * DAY_LEDGERS;
 
-/// Upper bound on the admin-set delay. The admin can tune the wait, but cannot
-/// set it so long that funds are effectively frozen.
+// cap on the delay so admin can't freeze funds by setting it huge
 const MAX_DELAY: u64 = 30 * 86_400;
 const MAX_ASSETS: u32 = 8;
-/// A Stellar public address is 56 characters of base32.
+// stellar address = 56 base32 chars
 const ADDRESS_LEN: u32 = 56;
 
-/// The generated Groth16 verifier for the claim circuit.
+// the groth16 verifier contract
 #[contractclient(name = "VerifierClient")]
 pub trait Verifier {
     fn verify_proof(env: Env, proof: Proof, public_inputs: Vec<BytesN<32>>) -> bool;
@@ -53,8 +44,7 @@ pub struct SpareKey;
 
 #[contractimpl]
 impl SpareKey {
-    /// `min_delay` is in seconds and starts at whatever is passed here (5 for
-    /// demos). Production wants days, not seconds.
+    // min_delay in seconds. 5 is fine for a demo, prod wants days
     pub fn __constructor(env: Env, admin: Address, verifier: Address, min_delay: u64) {
         let s = env.storage().instance();
         if s.has(&DataKey::Admin) {
@@ -71,9 +61,8 @@ impl SpareKey {
 
     // ────────────────────────────────── phase 1: registration ──────────────
 
-    /// Record the email commitment. The caller must also grant this contract an
-    /// allowance on every asset listed, which is what lets a later recovery
-    /// move anything. `register_and_approve` does both in one transaction.
+    // store the email commitment. you also need to approve an allowance on each
+    // asset or recovery can't move anything. register_and_approve does both at once.
     pub fn register(
         env: Env,
         owner: Address,
@@ -98,9 +87,8 @@ impl SpareKey {
         events::Registered { owner, commitment, salt }.publish(&env);
     }
 
-    /// One-transaction setup: register, then grant the allowance on each asset
-    /// from inside the same call, so the wallet asks for a single signature and
-    /// the two can never end up half-applied.
+    // register + approve in one call so it's a single signature and can't end up
+    // half done
     pub fn register_and_approve(
         env: Env,
         owner: Address,
@@ -118,9 +106,7 @@ impl SpareKey {
         }
     }
 
-    /// Point the registration at a different email. Refused while a recovery is
-    /// in flight, so an attacker who somehow started one cannot also move the
-    /// goalposts.
+    // change the email. blocked if a recovery is already running
     pub fn update_email(env: Env, owner: Address, commitment: BytesN<32>, salt: BytesN<32>) {
         owner.require_auth();
         let mut reg = get_reg(&env, &owner);
@@ -133,8 +119,7 @@ impl SpareKey {
         events::EmailChanged { owner, commitment }.publish(&env);
     }
 
-    /// Withdraw from the scheme entirely. The allowance should be revoked
-    /// separately by approving zero; this contract cannot do that for you.
+    // opt out. revoke the allowance yourself by approving zero, we can't do it for you
     pub fn unregister(env: Env, owner: Address) {
         owner.require_auth();
         let _ = get_reg(&env, &owner);
@@ -145,12 +130,9 @@ impl SpareKey {
 
     // ────────────────────────────────── phase 2: recovery ──────────────────
 
-    /// Permissionless: anyone may submit, because the person recovering has no
-    /// key to authorise with. Safety comes from the proof, not the caller.
-    ///
-    /// The destination is read out of the signed Subject. A relayer holding the
-    /// proof therefore cannot point it anywhere else, which is the difference
-    /// between this and trusting the relayer.
+    // anyone can call this - the person recovering has no key to sign with, so
+    // safety is in the proof not the caller. destination comes from the signed
+    // subject so whoever submits it can't point it somewhere else.
     pub fn start_recovery(env: Env, owner: Address, proof: Proof, public_inputs: Vec<BytesN<32>>) {
         let reg = get_reg(&env, &owner);
         if env.storage().persistent().has(&DataKey::Pending(owner.clone())) {
@@ -160,8 +142,7 @@ impl SpareKey {
             panic_with_error!(&env, Error::BadPublicInputs);
         }
 
-        // Which mail provider signed it. Without this check the proof only says
-        // "signed by some key", and anyone could generate their own.
+        // which dkim key signed it. without this check anyone could sign their own
         let pubkey_hash = public_inputs.get_unchecked(PI_PUBKEY_HASH);
         if !env.storage().persistent().has(&DataKey::DkimKey(pubkey_hash.clone())) {
             panic_with_error!(&env, Error::UnknownDkimKey);
@@ -169,9 +150,8 @@ impl SpareKey {
         if public_inputs.get_unchecked(PI_COMMITMENT) != reg.commitment {
             panic_with_error!(&env, Error::WrongCommitment);
         }
-        // The salt is a public input, so it must be the one registered: a
-        // different salt would let an attacker's address hash to this
-        // commitment.
+        // salt is public so it has to match the registered one, else someone could
+        // pick a salt that makes their address hash to this commitment
         if public_inputs.get_unchecked(PI_SALT) != reg.salt {
             panic_with_error!(&env, Error::WrongSalt);
         }
@@ -188,7 +168,7 @@ impl SpareKey {
 
         let destination = destination_from_subject(&env, &public_inputs);
 
-        // Spend the email before anything else can happen with it.
+        // burn the email first
         env.storage().persistent().set(&DataKey::Nullifier(nullifier.clone()), &true);
         env.storage().persistent().extend_ttl(
             &DataKey::Nullifier(nullifier.clone()),
@@ -214,11 +194,8 @@ impl SpareKey {
         events::RecoveryStarted { owner, destination, unlock_at }.publish(&env);
     }
 
-    /// The owner is still here after all. Cancelling costs them their key, which
-    /// they have by definition if they can call this.
-    ///
-    /// Note the spent nullifier is NOT released: that email stays burned, so a
-    /// cancelled attempt cannot simply be resubmitted.
+    // owner showed up, cancel it (needs their key, which they clearly have if they
+    // can call this). the nullifier stays burned so you can't just resubmit.
     pub fn cancel_recovery(env: Env, owner: Address) {
         owner.require_auth();
         let pending = get_pending(&env, &owner);
@@ -226,8 +203,7 @@ impl SpareKey {
         events::RecoveryCancelled { owner, destination: pending.destination }.publish(&env);
     }
 
-    /// Permissionless once the delay has passed, so the person recovering is
-    /// never blocked on us submitting for them.
+    // anyone can call this once the delay's up, so recovery doesn't depend on us
     pub fn execute_recovery(env: Env, owner: Address) -> Vec<AssetSpec> {
         let reg = get_reg(&env, &owner);
         let pending = get_pending(&env, &owner);
@@ -241,9 +217,8 @@ impl SpareKey {
             let client = token::TokenClient::new(&env, &a.token);
             let spendable = client.balance(&owner) - a.floor;
             let allowance = client.allowance(&owner, &me);
-            // Take the lesser rather than reverting when one is short: the
-            // owner may be unreachable, so a wholesale failure here could be
-            // permanent.
+            // take whatever's smaller instead of reverting - owner might be gone, so
+            // failing the whole thing could strand everything
             let amount = if spendable < allowance { spendable } else { allowance };
             if amount <= 0 {
                 continue;
@@ -262,8 +237,7 @@ impl SpareKey {
     }
 
     // ────────────────────────────────── admin ──────────────────────────────
-    // Parameters only. None of these can move funds, redirect a recovery, or
-    // alter anyone's registration.
+    // params only. can't move funds, redirect a recovery, or touch a registration.
 
     pub fn set_min_delay(env: Env, seconds: u64) {
         require_admin(&env);
@@ -276,7 +250,7 @@ impl SpareKey {
             .publish(&env);
     }
 
-    /// Register a mail provider's DKIM key hash, as the circuit computes it.
+    // add a dkim key hash (the one the circuit outputs)
     pub fn add_dkim_key(env: Env, pubkey_hash: BytesN<32>) {
         require_admin(&env);
         env.storage().persistent().set(&DataKey::DkimKey(pubkey_hash.clone()), &true);
@@ -288,19 +262,16 @@ impl SpareKey {
         touch(&env);
     }
 
-    /// Providers rotate keys, and a compromised key must be removable.
-    /// Recoveries already pending are unaffected.
+    // providers rotate keys, and a bad key needs removing. pending recoveries unaffected.
     pub fn remove_dkim_key(env: Env, pubkey_hash: BytesN<32>) {
         require_admin(&env);
         env.storage().persistent().remove(&DataKey::DkimKey(pubkey_hash));
         touch(&env);
     }
 
-    /// Point at a new verifier. This exists so a proper multi-party ceremony,
-    /// or a post-quantum proof system, can replace today's development setup
-    /// without moving anyone's funds. It is also the most dangerous admin
-    /// power here, since a malicious verifier would accept forged proofs: it
-    /// belongs behind a multisig with a public timelock.
+    // swap the verifier - lets us upgrade to a real ceremony or a new proof system
+    // without touching funds. also the scariest admin power (a bad verifier accepts
+    // forged proofs) so put it behind a multisig + timelock.
     pub fn set_verifier(env: Env, verifier: Address) {
         require_admin(&env);
         env.storage().instance().set(&DataKey::Verifier, &verifier);
@@ -336,8 +307,7 @@ impl SpareKey {
     pub fn admin(env: Env) -> Address {
         get(&env, &DataKey::Admin)
     }
-    /// Exposed so a wallet can show the user what a proof would pay out to
-    /// before anything is submitted.
+    // so a wallet can show where a proof would pay out before submitting
     pub fn preview_destination(env: Env, public_inputs: Vec<BytesN<32>>) -> Address {
         if public_inputs.len() != PI_COUNT {
             panic_with_error!(&env, Error::BadPublicInputs);
@@ -396,19 +366,15 @@ fn get_pending(env: &Env, owner: &Address) -> Pending {
     }
 }
 
-/// Rebuild the destination address from the subject the circuit revealed.
-///
-/// The circuit packs the subject 31 bytes per field element, little-endian,
-/// across `PI_PAYOUT_CHUNKS` signals. A public signal arrives big-endian, so
-/// each is reversed and its low 31 bytes taken, then trailing padding dropped.
-/// The result must be exactly a 56-character Stellar address and nothing else,
-/// so there is never any parsing ambiguity about what was authorised.
+// rebuild the destination from the subject the circuit exposed.
+// circuit packs it 31 bytes per field element, little-endian, across the payout
+// signals. signals come in big-endian so reverse each, take the low 31 bytes, drop
+// the padding. has to be exactly a 56-char address, nothing else, no ambiguity.
 fn destination_from_subject(env: &Env, public_inputs: &Vec<BytesN<32>>) -> Address {
     let mut raw = Bytes::new(env);
     for i in 0..PI_PAYOUT_CHUNKS {
         let be = public_inputs.get_unchecked(PI_PAYOUT_0 + i).to_array();
-        // big-endian: be[31] is the least significant byte, so little-endian
-        // order is be[31], be[30], ... and the top byte must be unused.
+        // big-endian, so be[31] is the low byte. top byte must be unused.
         if be[0] != 0 {
             panic_with_error!(env, Error::BadDestination);
         }
@@ -417,7 +383,7 @@ fn destination_from_subject(env: &Env, public_inputs: &Vec<BytesN<32>>) -> Addre
         }
     }
 
-    // Drop the zero padding the packing added.
+    // drop the padding
     let mut len = raw.len();
     while len > 0 && raw.get_unchecked(len - 1) == 0 {
         len -= 1;
@@ -427,8 +393,7 @@ fn destination_from_subject(env: &Env, public_inputs: &Vec<BytesN<32>>) -> Addre
     }
     let trimmed = raw.slice(0..len);
 
-    // Any byte that is not base32 would be rejected here anyway, but failing
-    // early keeps the error honest.
+    // would get rejected later anyway, but fail early for a clean error
     for i in 0..trimmed.len() {
         let c = trimmed.get_unchecked(i);
         let ok = (c >= b'A' && c <= b'Z') || (c >= b'2' && c <= b'7');

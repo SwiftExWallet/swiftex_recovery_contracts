@@ -4,7 +4,7 @@ use soroban_sdk::{
     Address, BytesN, Vec,
 };
 
-/// A Groth16 proof, laid out exactly as the generated verifier expects it.
+// groth16 proof, laid out how the verifier wants it
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proof {
@@ -13,8 +13,8 @@ pub struct Proof {
     pub c: Bn254G1Affine,
 }
 
-/// Position of each value in the circuit's public signals. Fixed by
-/// legacy_claim.circom; changing the circuit changes this list.
+// where each value sits in the public signals. set by the circuit - change the
+// circuit and this list changes too.
 pub const PI_PUBKEY_HASH: u32 = 0;
 pub const PI_COMMITMENT: u32 = 1;
 pub const PI_PAYOUT_0: u32 = 2;
@@ -23,37 +23,36 @@ pub const PI_NULLIFIER: u32 = 5;
 pub const PI_SALT: u32 = 6;
 pub const PI_COUNT: u32 = 7;
 
-/// One asset the recovery is allowed to sweep.
+// one asset recovery is allowed to move
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssetSpec {
-    /// Stellar Asset Contract address.
+    // the SAC address
     pub token: Address,
-    /// Amount left behind in the owner's account. For native XLM this covers
-    /// the base reserve plus fee headroom: sweeping to zero fails the
-    /// min-balance check outright and would strand everything.
+    // how much to leave behind. for XLM this is the base reserve + some fee room,
+    // sweeping to zero would hit the min-balance check and strand the account.
     pub floor: i128,
 }
 
-/// What the owner registers while they still have their key.
+// what the owner stores while they still have their key
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Registration {
     pub owner: Address,
-    /// Poseidon(sender address packed, salt). The email never touches the chain.
+    // poseidon(email packed, salt). the email itself never hits the chain.
     pub commitment: BytesN<32>,
-    /// Public by design. Defeats one rainbow table unmasking every user; it is
-    /// not a secret and must stay readable so the commitment can be recomputed.
+    // public on purpose. stops one rainbow table unmasking everyone. not a secret,
+    // and has to stay readable so the commitment can be recomputed.
     pub salt: BytesN<32>,
     pub assets: Vec<AssetSpec>,
     pub registered_at: u64,
 }
 
-/// A recovery that has been proven and is waiting out its delay.
+// a proven recovery waiting out its delay
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pending {
-    /// Where funds go. Taken from the signed Subject, never from a caller.
+    // where funds go. from the signed subject, never the caller.
     pub destination: Address,
     pub unlock_at: u64,
     pub nullifier: BytesN<32>,
@@ -63,17 +62,16 @@ pub struct Pending {
 #[contracttype]
 pub enum DataKey {
     Admin,
-    /// Groth16 verifier for the claim circuit.
+    // the groth16 verifier
     Verifier,
-    /// Seconds between a proven recovery and payout, during which the owner
-    /// can cancel. Admin-set.
+    // seconds between proof and payout, the cancel window. admin sets it.
     MinDelay,
-    /// Accepted DKIM public key hashes, as published by the circuit.
+    // allowed dkim key hashes (as the circuit outputs them)
     DkimKey(BytesN<32>),
     Reg(Address),
     Pending(Address),
-    /// Spent emails. Global to this contract, so one email can never be used
-    /// twice even across different registrations.
+    // spent emails. global, so one email can't be reused even on a different
+    // registration.
     Nullifier(BytesN<32>),
 }
 

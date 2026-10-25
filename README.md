@@ -40,11 +40,41 @@ stellar contract build
 
 Outputs to `target/wasm32v1-none/release/`.
 
+## Tests
 
-`sparekey` ships with a full test suite covering every failure path (bad proof,
-unknown DKIM key, wrong commitment, wrong salt, reused nullifier, malformed
-destination, the delay boundary, cancellation, and the sweep allowance cap) against a
-mock verifier.
+```
+cargo test
+```
+
+38 tests on `sparekey`, run against a mock verifier so we can force both pass and
+fail. They cover the happy path and every way recovery should be rejected:
+
+- registration: can't register twice, empty/too-many assets, negative floor,
+  update-email, unregister, update blocked while a recovery is pending
+- proofs: wrong commitment, wrong salt, unknown DKIM key, bad proof, wrong number
+  of public inputs, subject that isn't an address, non-base32 bytes in the subject
+- replay: same email can't recover twice, a spent email can't be used on another
+  registration, cancelling does not un-burn the email
+- timelock: can't execute before the delay, executes right on the boundary, owner
+  can cancel and keep the funds, execute-after-cancel fails
+- sweep: moves the funds and leaves the floor, allowance caps the sweep, nothing to
+  recover when everything's at the floor
+- admin: can tune the delay, can't freeze funds with an absurd delay, can't move
+  funds, hand-over works
+- `pack_address` in the tests is the exact inverse of the on-chain unpacking, so if
+  either drifts the round-trip test fails first
+
+## Deployments
+
+Testnet (Soroban).
+
+| contract | id |
+|---|---|
+| SpareKey | [`CDT5MXYHAZK6YPTWFBKPECHGPCBQFINME6WJCONXCT73RKJRDIJ2HYJK`](https://stellar.expert/explorer/testnet/contract/CDT5MXYHAZK6YPTWFBKPECHGPCBQFINME6WJCONXCT73RKJRDIJ2HYJK) |
+| zkVerifier | [`CDK5O355WO7MJPAB2PLRLKI4BUB6WH7LGUDEW4WBJYIGTVHK3PJVEKTZ`](https://stellar.expert/explorer/testnet/contract/CDK5O355WO7MJPAB2PLRLKI4BUB6WH7LGUDEW4WBJYIGTVHK3PJVEKTZ) |
+
+Network passphrase `Test SDF Network ; September 2015`, RPC
+`https://soroban-testnet.stellar.org`.
 
 ## How recovery works
 

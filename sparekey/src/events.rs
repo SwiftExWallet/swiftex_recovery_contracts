@@ -1,6 +1,5 @@
-//! Public event schema. Published so a third party can run the relayer and the
-//! notifier without us: the claim that recovery survives SwiftEx disappearing
-//! is only true if these are documented and stable.
+//! event schema. kept stable + documented so anyone can run the relayer and
+//! notifier without us - that's the whole "works even if swiftex disappears" thing.
 
 use soroban_sdk::{contractevent, Address, BytesN};
 
@@ -28,8 +27,8 @@ pub struct Unregistered {
     pub owner: Address,
 }
 
-/// The signal an owner must react to. A notifier watches this and warns them,
-/// because the delay only protects someone who hears about it.
+// the one an owner needs to react to. a notifier watches it and warns them -
+// the delay only helps if you hear about it.
 #[contractevent(topics = ["sparekey", "recovery_started"])]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryStarted {
