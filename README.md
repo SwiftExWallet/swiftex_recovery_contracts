@@ -21,7 +21,7 @@ This repo is the on-chain half of SwiftEx email recovery. The full build spans f
 ### Try it (testnet)
 
 It all runs on Stellar testnet. Connect and sign with the SwiftEx wallet or with Freighter.
-Need test XLM? Use the "Fund Wallet" button in the app. You can also grab the SwiftEx testnet
+Need test XLM- Use the "Fund Wallet" (on Freighter) button in the app. You can also grab the SwiftEx testnet
 APK (Android, optional): https://drive.google.com/drive/folders/14c11n8KVfsL2e5G6Op6ryseXIm2OZE_u
 
 **Register a recovery email** at https://testnet.swiftexchange.io/recovery?tab=register
@@ -29,7 +29,7 @@ APK (Android, optional): https://drive.google.com/drive/folders/14c11n8KVfsL2e5G
 1. Open the page and connect your wallet (SwiftEx or Freighter).
 2. Go to "Register Guardian" and type your recovery email twice. Paste is off on purpose, to stop typos.
 3. Pick what to protect: XLM only, or both XLM and USDC.
-4. Sign the transaction. One signature stores a hash of your email on-chain and sets the recovery allowance. The email itself never leaves your device.
+4. Sign the transaction. One signature stores a hash of your email on-chain and sets the recovery allowance. 
 
 **Recover to a new wallet** at https://testnet.swiftexchange.io/recovery?tab=recover
 
